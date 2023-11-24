@@ -12,4 +12,5 @@ public class FileSystemViewModel
     public string Attributes { get; set; }
     public string Owner { get; set; }
     public string Rights { get; set; }
+    public FileSystemElementType Type { get; set; }
 }

@@ -20,7 +20,8 @@ public static class FileInfoExtensions
             LastAccessDate = file.LastAccessTime,
             Attributes = file.Attributes.ToString(),
             Owner = fs.GetOwner(typeof(NTAccount))!.ToString(),
-            Rights = FileInfoProvider.GetRights(fs)
+            Rights = FileInfoProvider.GetRights(fs),
+            Type = FileSystemElementType.File
         };
     }
 }

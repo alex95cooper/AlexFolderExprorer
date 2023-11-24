@@ -5,9 +5,9 @@ namespace AlexFolderExplorer.Extensions;
 
 public static class FileSystemVmExtensions
 {
-    public static XElement ToXElement(this FileSystemViewModel model, string systemElementType)
+    public static XElement ToXElement(this FileSystemViewModel model)
     {
-        return new XElement(systemElementType,
+        return new XElement(model.Type.ToString(),
             new XAttribute("name", model.Name),
             new XAttribute("size", model.Size),
             new XAttribute("creationDate", model.CreationDate.ToShortDateString()),

@@ -1,57 +1,60 @@
-using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Xml.Linq;
 using AlexFolderExplorer.Extensions;
-using AlexFolderExplorer.ViewModels;
 
 namespace AlexFolderExplorer;
 
 public class FolderXmlWriter
 {
-    private readonly Barrier _barrier;
+    private readonly ManualResetEvent _manualResetEvent;
+    private readonly XDocument _document;
+    private readonly string _rootFolderPath;
+    private readonly int _nestingCount;
 
-    private XDocument _document = new();
+    private XElement _rootElement;
 
-    public FolderXmlWriter(Barrier barrier)
+    public FolderXmlWriter(XDocument document, string rootPath, WaitHandle manualResetEvent)
     {
-        _barrier = barrier;
+        _document = document;
+        _manualResetEvent = (ManualResetEvent) manualResetEvent;
+        _rootFolderPath = rootPath;
+        _nestingCount = rootPath.Split(Path.DirectorySeparatorChar).Length;
+    }
+    
+    public void ModelHandler(object sender, FileSystemVmCreatedEventArgs e)
+    {
+        XElement rootElement = GetRootItem(e.PathRoot);
+        XElement fileSystemElement = e.Model.ToXElement();
+        AddFileSystemItem(rootElement, fileSystemElement, e);
+        _manualResetEvent.Set();
     }
 
-    public XElement AddRootXmlFolder(FileSystemViewModel model)
+    private void AddFileSystemItem(XElement rootElement,
+        XElement fileSystemElement, FileSystemVmCreatedEventArgs e)
     {
-        _document = new XDocument();
-        XElement root = model.ToXElement(Constants.FileSystem.FolderXName);
-        _document.Add(root);
-        return root;
-    }
-
-    public void WriteToXml(List<FileSystemViewModel> subFolders,
-        List<FileSystemViewModel> files, XElement rootFolder)
-    {
-        WriteFoldersToXml(subFolders, rootFolder);
-        WriteFilesToXml(files, rootFolder);
-        _barrier.SignalAndWait();
-    }
-
-    public void SaveFile(InputViewModel model)
-    {
-        _document.Save(Path.Combine(model.SavePath, model.Name + ".xml"));
-    }
-
-    private static void WriteFoldersToXml(List<FileSystemViewModel> subFolders, XElement rootFolder)
-    {
-        foreach (FileSystemViewModel subFolder in subFolders)
+        if (e.PathRoot == _rootFolderPath)
         {
-            rootFolder.Add(subFolder.ToXElement(Constants.FileSystem.FolderXName));
+            _rootElement = fileSystemElement;
+            _document.Add(_rootElement);
+        }
+        else
+        {
+            rootElement.Add(fileSystemElement);
         }
     }
 
-    private static void WriteFilesToXml(List<FileSystemViewModel> files, XElement rootFolder)
+    private XElement GetRootItem(string path)
     {
-        foreach (FileSystemViewModel file in files)
+        XElement xElement = _rootElement;
+        string[] directories = path.Split(Path.DirectorySeparatorChar);
+        for (int i = _nestingCount; i < directories.Length - 1; i++)
         {
-            rootFolder.Add(file.ToXElement(Constants.FileSystem.FileXName));
+            xElement = xElement!.Descendants(Constants.FileSystem.FolderXName)
+                .FirstOrDefault(el => el.Attribute("name")!.Value == directories[i]);
         }
+
+        return xElement;
     }
 }

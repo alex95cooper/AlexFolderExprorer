@@ -1,69 +1,52 @@
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
-using AlexFolderExplorer.ViewModels;
 
 namespace AlexFolderExplorer;
 
 public class TreeViewWriter
 {
-    private readonly Barrier _barrier;
+    private readonly ManualResetEvent _manualResetEvent;
     private readonly TreeView _tree;
+    private readonly string _rootFolderPath;
     private readonly int _nestingCount;
 
     private TreeViewItem _rootItem;
 
-
-    public TreeViewWriter(TreeView tree, Barrier barrier, string rootPath)
+    public TreeViewWriter(TreeView tree, string rootPath, ManualResetEvent manualResetEvent)
     {
         _tree = tree;
-        _barrier = barrier;
+        _manualResetEvent = manualResetEvent;
+        _rootFolderPath = rootPath;
         _nestingCount = rootPath.Split(Path.DirectorySeparatorChar).Length;
     }
-
-    public void AddRootTreeItem(FileSystemViewModel folderVm)
+    
+    public void ModelHandler(object sender, FileSystemVmCreatedEventArgs e)
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            _rootItem = new TreeViewItem();
-            _rootItem.Header = folderVm.Name;
+            TreeViewItem rootTreeItem = GetRootItem(e.PathRoot);
+            TreeViewItem fileSystemItem = new TreeViewItem();
+            fileSystemItem.Header = e.Model.Name;
+            AddFileSystemItem(rootTreeItem, fileSystemItem, e);
+        });
+
+        _manualResetEvent.Set();
+    }
+
+    private void AddFileSystemItem(TreeViewItem rootTreeItem,
+        TreeViewItem fileSystemItem, FileSystemVmCreatedEventArgs e)
+    {
+        if (e.PathRoot == _rootFolderPath)
+        {
+            _rootItem = fileSystemItem;
             _tree.Items.Add(_rootItem);
-        });
-    }
-
-    public void AddToTreeView(List<FileSystemViewModel> subFolders,
-        List<FileSystemViewModel> files, string rootPath)
-    {
-        Application.Current.Dispatcher.Invoke(() =>
-        {
-            TreeViewItem rootTreeItem = GetRootItem(rootPath);
-            AddFolders(subFolders, rootTreeItem);
-            AddFiles(files, rootTreeItem);
-        });
-
-        _barrier.SignalAndWait();
-    }
-
-    private static void AddFolders(List<FileSystemViewModel> subFolders, TreeViewItem rootTreeItem)
-    {
-        foreach (FileSystemViewModel subFolder in subFolders)
-        {
-            TreeViewItem subFolderItem = new TreeViewItem();
-            subFolderItem.Header = subFolder.Name;
-            rootTreeItem.Items.Add(subFolderItem);
         }
-    }
-
-    private static void AddFiles(List<FileSystemViewModel> files, TreeViewItem rootTreeItem)
-    {
-        foreach (FileSystemViewModel file in files)
+        else
         {
-            TreeViewItem fileItem = new TreeViewItem();
-            fileItem.Header = file.Name;
-            rootTreeItem.Items.Add(fileItem);
+            rootTreeItem.Items.Add(fileSystemItem);
         }
     }
 
@@ -71,7 +54,7 @@ public class TreeViewWriter
     {
         TreeViewItem treeItem = _rootItem;
         string[] directories = path.Split(Path.DirectorySeparatorChar);
-        for (int i = _nestingCount; i < directories.Length; i++)
+        for (int i = _nestingCount; i < directories.Length - 1; i++)
         {
             treeItem = treeItem!.Items.Cast<TreeViewItem>()
                 .FirstOrDefault(item => (string) item.Header == directories[i]);

@@ -1,80 +1,74 @@
-using System.Collections.Generic;
+using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
-using System.Windows;
-using System.Windows.Controls;
-using System.Xml.Linq;
 using AlexFolderExplorer.Extensions;
 using AlexFolderExplorer.ViewModels;
 
 namespace AlexFolderExplorer;
 
-public class Explorer
+public class Explorer : IFileSystemModelCreator
 {
-    private const int ThreadsCount = 3;
-
-    private readonly Barrier _barrier;
-    private readonly FolderXmlWriter _xmlWriter;
-    private readonly TreeViewWriter _treeWriter;
+    private ManualResetEvent[] _manualResetEvents;
     private readonly InputViewModel _inputVm;
-    private readonly Label _progress;
 
-    private Thread _theeViewThread;
-    private Thread _xmlFileThread;
-
-    public Explorer(TreeView tree, InputViewModel model, Label progress)
+    public Explorer(InputViewModel model,
+        ManualResetEvent[] manualResetEvents)
     {
         _inputVm = model;
-        _progress = progress;
-        _barrier = new Barrier(ThreadsCount);
-        _xmlWriter = new FolderXmlWriter(_barrier);
-        _treeWriter = new TreeViewWriter(tree, _barrier, _inputVm.FolderPath);
+        _manualResetEvents = manualResetEvents;
     }
+    
+    public delegate void ExploreTreadFinishedHandler(object sender, EventArgs e);
+        
+    public event IFileSystemModelCreator.FileSystemVmCreatedHandler FileSystemVmCreated;
+    public event ExploreTreadFinishedHandler ExploreTreadFinished;
 
     public void StartExplore()
     {
         FileSystemViewModel folderVm = new DirectoryInfo(_inputVm.FolderPath).ToViewModel();
-        XElement rootXElement = _xmlWriter.AddRootXmlFolder(folderVm);
-        _treeWriter.AddRootTreeItem(folderVm);
-        ExploreCurrentFolder(_inputVm.FolderPath, rootXElement);
-        _xmlWriter.SaveFile(_inputVm);
-        NotifyCompletion();
+        OnFileSystemVmCreated(folderVm, _inputVm.FolderPath);
+        ExploreCurrentFolder(_inputVm.FolderPath);
+        ExploreTreadFinished?.Invoke(this, null);
     }
 
-    private void ExploreCurrentFolder(string pathRoot, XElement rootXElement)
+    private void ExploreCurrentFolder(string pathRoot)
     {
         DirectoryInfo exploreFolder = new(pathRoot);
         EnumerationOptions options = new EnumerationOptions();
         var subFolders = exploreFolder.GetDirectories(Constants.FileSystem.FolderPattern, options);
-        var subFoldersVm = subFolders.ToViewModel();
-        var filesVm = exploreFolder.GetFiles(Constants.FileSystem.FilePattern, options).ToViewModel();
-        LaunchWriteThreads(subFoldersVm, filesVm, pathRoot, rootXElement);
-        ExploreSubFolders(subFolders, rootXElement);
+        var files = exploreFolder.GetFiles(Constants.FileSystem.FilePattern, options);
+        CreateModels(subFolders, files);
+        ExploreSubFolders(subFolders);
     }
 
-    private void NotifyCompletion()
+    private void CreateModels(DirectoryInfo[] subFolders, FileInfo[] files)
     {
-        Application.Current.Dispatcher.Invoke(() => { _progress.Content = Constants.Notifications.WorkComplete; });
-    }
-
-    private void LaunchWriteThreads(List<FileSystemViewModel> subFoldersVm,
-        List<FileSystemViewModel> filesVm, string pathRoot, XElement rootXElement)
-    {
-        _theeViewThread = new Thread(() => _treeWriter.AddToTreeView(subFoldersVm, filesVm, pathRoot));
-        _xmlFileThread = new Thread(() => _xmlWriter.WriteToXml(subFoldersVm, filesVm, rootXElement));
-        _theeViewThread.Start();
-        _xmlFileThread.Start();
-        _barrier.SignalAndWait();
-    }
-
-    private void ExploreSubFolders(DirectoryInfo[] subFolders, XElement rootXElement)
-    {
-        foreach (DirectoryInfo subFolder in subFolders)
+        foreach (var folder in subFolders)
         {
-            XElement subFolderXElement = rootXElement.Descendants(Constants.FileSystem.FolderXName)
-                .FirstOrDefault(el => el.Attribute("name")!.Value == subFolder.Name);
-            ExploreCurrentFolder(subFolder.FullName, subFolderXElement);
+            
+            FileSystemViewModel model = folder.ToViewModel();
+            WaitHandle.WaitAll(_manualResetEvents);
+            OnFileSystemVmCreated(model, folder.FullName);
         }
+
+        foreach (var file in files)
+        {
+            FileSystemViewModel model = file.ToViewModel();
+            WaitHandle.WaitAll(_manualResetEvents);
+            OnFileSystemVmCreated(model, file.FullName);
+        }
+    }
+
+    private void ExploreSubFolders(DirectoryInfo[] subFolders)
+    {
+        foreach (var subFolder in subFolders)
+        {
+            ExploreCurrentFolder(subFolder.FullName);
+        }
+    }
+
+    private void OnFileSystemVmCreated(FileSystemViewModel model, string pathRoot)
+    {
+        FileSystemVmCreated?.Invoke(this, new FileSystemVmCreatedEventArgs(model, pathRoot));
     }
 }

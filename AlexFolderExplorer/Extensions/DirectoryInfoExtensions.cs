@@ -20,7 +20,8 @@ public static class DirectoryInfoExtensions
             LastAccessDate = directory.LastAccessTime,
             Attributes = directory.Attributes.ToString(),
             Owner = ds.GetOwner(typeof(NTAccount))!.ToString(),
-            Rights = FileInfoProvider.GetRights(ds)
+            Rights = FileInfoProvider.GetRights(ds),
+            Type = FileSystemElementType.Folder
         };
     }
 }
